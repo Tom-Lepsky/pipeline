@@ -180,7 +180,9 @@ func (n *Node[I, O]) Run(ctx context.Context, wg *sync.WaitGroup, errChan chan<-
 				output = util.FanOut(ctx, n.outputs...)
 			}
 
-			n.handler(ctx, input, output, errChan)
+			proxyErr := n.proxyErrChan(wg, errChan)
+			defer close(proxyErr)
+			n.handler(ctx, input, output, proxyErr)
 		}()
 	})
 }
@@ -232,4 +234,18 @@ func Autowire[I, O, T any](from *Node[I, O], to ...*Node[O, T]) error {
 // wrapError оборачивает ошибку в префикс с именем узла для удобства отладки
 func (n *Node[I, O]) wrapError(err error) error {
 	return fmt.Errorf("[%s] %w", n.name, err)
+}
+
+// proxyErrChan декоратор для ошибок
+func (n *Node[I, O]) proxyErrChan(wg *sync.WaitGroup, errChan chan<- error) chan<- error {
+	proxy := make(chan error, 1)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for err := range proxy {
+			errChan <- n.wrapError(err)
+		}
+	}()
+
+	return proxy
 }

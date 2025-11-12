@@ -13,7 +13,6 @@ import (
 )
 
 func main() {
-
 	var wg sync.WaitGroup
 	paths := ProducePaths(&wg)
 	result := ConsumeResult(&wg)

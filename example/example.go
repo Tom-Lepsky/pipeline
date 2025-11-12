@@ -144,7 +144,6 @@ func md5Hash(ctx context.Context, path string, output chan<- string, errChan cha
 		file, err = os.ReadFile(path)
 		if err != nil {
 			errChan <- err
-			return
 		}
 	}
 
@@ -164,10 +163,9 @@ func Demux(ctx context.Context, input <-chan string, output chan<- string, errCh
 		select {
 		case <-ctx.Done():
 			errChan <- ctx.Err()
-			break
+			return
 		default:
 			output <- in
 		}
-
 	}
 }
