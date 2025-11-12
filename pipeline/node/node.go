@@ -27,13 +27,13 @@ type Handler[I, O any] func(ctx context.Context, input <-chan I, output chan<- O
 // Node представляет собой базовый узел в пайплайне обработки данных. Поддерживает множественные
 // входы и выходы на основе каналов.
 type Node[I, O any] struct {
-	name        string
-	inputsMask  uint64
-	outputsMask uint64
-	inputs      []<-chan I
-	outputs     []chan<- O
-	handler     Handler[I, O]
-	started     sync.Once
+	name           string
+	inputsMask     uint64
+	outputsMask    uint64
+	outputBuffSize []int
+	inputs         []<-chan I
+	outputs        []chan<- O
+	handler        Handler[I, O]
 }
 
 // New создаёт новый узел с заданным именем, количеством входов, выходов, опциональными буферами
@@ -52,20 +52,12 @@ func New[I, O any](name string, inputNum int, outputNum int, outputBuffSize []in
 		panic("I/O out of range")
 	}
 
-	outputs := make([]chan<- O, outputNum)
-	for i := 0; i < outputNum; i++ {
-		bufferSize := 0
-		if outputBuffSize != nil {
-			bufferSize = outputBuffSize[i]
-		}
-		outputs[i] = make(chan O, bufferSize)
-	}
-
 	return Node[I, O]{
-		name:    name,
-		inputs:  make([]<-chan I, inputNum),
-		outputs: outputs,
-		handler: handler,
+		name:           name,
+		outputBuffSize: outputBuffSize,
+		inputs:         make([]<-chan I, inputNum),
+		outputs:        make([]chan<- O, outputNum),
+		handler:        handler,
 	}
 }
 
@@ -175,30 +167,28 @@ func (n *Node[I, O]) Run(ctx context.Context, wg *sync.WaitGroup, errChan chan<-
 		}
 	}
 
-	n.started.Do(func() {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 
-			var input <-chan I
-			if len(n.inputs) == 1 {
-				input = n.inputs[0]
-			} else {
-				input = util.FanIn(ctx, n.inputs...)
-			}
+		var input <-chan I
+		if len(n.inputs) == 1 {
+			input = n.inputs[0]
+		} else {
+			input = util.FanIn(ctx, n.inputs...)
+		}
 
-			var output chan<- O
-			if len(n.outputs) == 1 {
-				output = n.outputs[0]
-			} else {
-				output = util.FanOut(ctx, n.outputs...)
-			}
+		var output chan<- O
+		if len(n.outputs) == 1 {
+			output = n.outputs[0]
+		} else {
+			output = util.FanOut(ctx, n.outputs...)
+		}
 
-			proxyErr := n.proxyErrChan(wg, errChan)
-			defer close(proxyErr)
-			n.handler(ctx, input, output, proxyErr)
-		}()
-	})
+		proxyErr := n.proxyErrChan(wg, errChan)
+		defer close(proxyErr)
+		n.handler(ctx, input, output, proxyErr)
+	}()
 }
 
 // Connect подключает выход from[outIdx] к входу to[inIdx]
@@ -212,6 +202,11 @@ func Connect[I, O, T any](from *Node[I, O], outIdx int, to *Node[O, T], inIdx in
 		return to.wrapError(ErrInputIdxOutOfRange)
 	}
 
+	buffSize := 0
+	if from.outputBuffSize != nil {
+		buffSize = from.outputBuffSize[outIdx]
+	}
+	from.outputs[outIdx] = make(chan O, buffSize)
 	to.inputs[inIdx] = toBidirectional(from.outputs[outIdx])
 	to.occupyInput(inIdx)
 	from.occupyOutput(outIdx)
