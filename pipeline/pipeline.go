@@ -14,20 +14,25 @@ type Runnable interface {
 // Pipeline представляет собой оркестратор для выполнения узлов в пайплайне. Поддерживает добавление нод, запуск с
 // контекстом, ожидание завершения и остановку. Все ноды запускаются параллельно
 type Pipeline struct {
-	cancelFunc context.CancelFunc
-	wg         *sync.WaitGroup
-	errChan    chan error
-	nodes      []Runnable
-	run        atomic.Bool
+	cancelFunc    context.CancelFunc
+	wg            *sync.WaitGroup
+	errChan       chan error
+	errChanClosed atomic.Bool
+	run           atomic.Bool
+	nodes         []Runnable
 }
 
-// New создаёт новый пайплайн с указанным каналом для ошибок.
-// Закрытие канала с ошибками на клиенте
-func New(errChan chan error) Pipeline {
+// New создаёт новый пайплайн
+func New() Pipeline {
 	return Pipeline{
 		wg:      &sync.WaitGroup{},
-		errChan: errChan,
+		errChan: make(chan error),
 	}
+}
+
+// ErrChan получить канал для чтения ошибок
+func (p *Pipeline) ErrChan() <-chan error {
+	return p.errChan
 }
 
 // AddNode добавляет ноды в пайплайн. Если пайплайн уже запущен (run=true),
@@ -55,7 +60,13 @@ func (p *Pipeline) Run(parentCtx context.Context) {
 // Wait ожидает завершения всех нод.
 // Блокирует вызывающую горутину до полного завершения пайплайна.
 func (p *Pipeline) Wait() {
+	if !p.run.Load() {
+		return
+	}
 	p.wg.Wait()
+	if p.errChanClosed.CompareAndSwap(false, true) {
+		close(p.errChan)
+	}
 	p.run.Store(false)
 }
 
@@ -67,5 +78,8 @@ func (p *Pipeline) Stop() {
 		}
 
 		p.wg.Wait()
+		if p.errChanClosed.CompareAndSwap(false, true) {
+			close(p.errChan)
+		}
 	}
 }

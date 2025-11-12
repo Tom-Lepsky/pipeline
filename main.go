@@ -17,22 +17,21 @@ func main() {
 	var wg sync.WaitGroup
 	paths := ProducePaths(&wg)
 	result := ConsumeResult(&wg)
-	errChan := make(chan error)
 
 	parallelHash := 10
 
-	pipe, err := example.HashFilePipeline(parallelHash, paths, result, errChan)
+	pipe, err := example.HashFilePipeline(parallelHash, paths, result)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
+	errChan := pipe.ErrChan()
 	HandleError(&wg, errChan)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	pipe.Run(ctx)
 	pipe.Wait()
-	close(errChan)
 	wg.Wait()
 }
 

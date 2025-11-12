@@ -12,7 +12,7 @@ import (
 )
 
 // HashFilePipeline пайплайн для обхода заданных директорий и подсчета md5 хешей
-func HashFilePipeline(parallelHash int, paths []chan string, result []chan string, errChan chan error) (*pipeline.Pipeline, error) {
+func HashFilePipeline(parallelHash int, paths []chan string, result []chan string) (*pipeline.Pipeline, error) {
 	// создаём узел для обхода директорий и привязываем к нему входы с потоком директорий
 	buffSize := make([]int, parallelHash)
 	for i := range buffSize {
@@ -55,7 +55,7 @@ func HashFilePipeline(parallelHash int, paths []chan string, result []chan strin
 	}
 
 	// Создаем пайплайн и добавляем в него все узлы
-	pipe := pipeline.New(errChan)
+	pipe := pipeline.New()
 	pipe.AddNode(&pathWalkerNode)
 	pipe.AddNode(runnable...)
 	pipe.AddNode(&demuxNode)
