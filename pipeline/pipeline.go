@@ -8,7 +8,7 @@ import (
 
 // Runnable — интерфейс для объектов, которые могут быть запущены в пайплайне.
 type Runnable interface {
-	Run(ctx context.Context, wg *sync.WaitGroup, errChan chan<- error)
+	Run(ctx context.Context, wg *sync.WaitGroup, errChan chan<- error, commonErrChan bool)
 }
 
 // Pipeline представляет собой оркестратор для выполнения узлов в пайплайне. Поддерживает добавление нод, запуск с
@@ -45,7 +45,7 @@ func (p *Pipeline) AddNode(n ...Runnable) {
 }
 
 // Run запускает все ноды пайплайна параллельно в контексте, производном от parentCtx
-func (p *Pipeline) Run(parentCtx context.Context) {
+func (p *Pipeline) Run(parentCtx context.Context, commonErrors bool) {
 	if !p.run.CompareAndSwap(false, true) {
 		return
 	}
@@ -53,7 +53,7 @@ func (p *Pipeline) Run(parentCtx context.Context) {
 	p.cancelFunc = cancel
 
 	for i := 0; i < len(p.nodes); i++ {
-		p.nodes[i].Run(ctx, p.wg, p.errChan)
+		p.nodes[i].Run(ctx, p.wg, p.errChan, commonErrors)
 	}
 }
 

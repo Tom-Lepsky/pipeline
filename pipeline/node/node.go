@@ -160,7 +160,7 @@ func (n *Node[I, O]) AutowireOutput(output ...chan O) error {
 // Run запускает обработчик узла в горутине.
 // Паникует, если какой-то вход не подключен. Запуск происходит только один раз (sync.Once).
 // ВАЖНО: Закрытие каналов output лежит на ответственности реализатора handler
-func (n *Node[I, O]) Run(ctx context.Context, wg *sync.WaitGroup, errChan chan<- error) {
+func (n *Node[I, O]) Run(ctx context.Context, wg *sync.WaitGroup, errChan chan<- error, commonErrChan bool) {
 	for i, ch := range n.inputs {
 		if ch == nil {
 			panic(n.wrapError(fmt.Errorf("input %d: unused", i)))
@@ -185,9 +185,14 @@ func (n *Node[I, O]) Run(ctx context.Context, wg *sync.WaitGroup, errChan chan<-
 			output = util.FanOut(ctx, n.outputs...)
 		}
 
-		proxyErr := n.proxyErrChan(wg, errChan)
-		defer close(proxyErr)
-		n.handler(ctx, input, output, proxyErr)
+		errCh := errChan
+		if !commonErrChan {
+			proxyErr := n.proxyErrChan(wg, errChan)
+			errCh = proxyErr
+			defer close(proxyErr)
+
+		}
+		n.handler(ctx, input, output, errCh)
 	}()
 }
 

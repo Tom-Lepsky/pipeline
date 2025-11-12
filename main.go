@@ -29,7 +29,7 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	pipe.Run(ctx)
+	pipe.Run(ctx, false)
 	pipe.Wait()
 	wg.Wait()
 }
