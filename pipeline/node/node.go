@@ -28,6 +28,7 @@ type Handler[I, O any] func(ctx context.Context, input <-chan I, output chan<- O
 // входы и выходы на основе каналов.
 type Node[I, O any] struct {
 	name        string
+	inputsMask  uint64
 	outputsMask uint64
 	inputs      []<-chan I
 	outputs     []chan<- O
@@ -76,6 +77,8 @@ func (n *Node[I, O]) SetInput(idx int, input <-chan I) error {
 	}
 
 	n.inputs[idx] = input
+	n.occupyInput(idx)
+
 	return nil
 }
 
@@ -92,15 +95,26 @@ func (n *Node[I, O]) SetOutput(idx int, output chan<- O) error {
 	return nil
 }
 
-// occupyOutput помечает выход по индексу как занятый в маске
-func (n *Node[I, O]) occupyOutput(idx int) {
-	n.outputsMask |= 1 << uint(idx)
+// occupyOutput помечает вход по индексу как занятый в маске
+func (n *Node[I, O]) occupyInput(idx int) {
+	n.inputsMask = setBit(n.inputsMask, idx)
 }
 
-// vacantInput возвращает индекс первого свободного (nil) входа или -1, если все заняты
+// occupyOutput помечает выход по индексу как занятый в маске
+func (n *Node[I, O]) occupyOutput(idx int) {
+	n.outputsMask = setBit(n.outputsMask, idx)
+}
+
+// setBit устанавливает бит
+func setBit(mask uint64, idx int) uint64 {
+	mask |= 1 << uint(idx)
+	return mask
+}
+
+// vacantInput возвращает индекс первого свободного входа или -1, если все заняты
 func (n *Node[I, O]) vacantInput() int {
 	for i := 0; i < len(n.inputs); i++ {
-		if n.inputs[i] == nil {
+		if (n.inputsMask & (1 << uint(i))) == 0 {
 			return i
 		}
 	}
@@ -199,6 +213,7 @@ func Connect[I, O, T any](from *Node[I, O], outIdx int, to *Node[O, T], inIdx in
 	}
 
 	to.inputs[inIdx] = toBidirectional(from.outputs[outIdx])
+	to.occupyInput(inIdx)
 	from.occupyOutput(outIdx)
 
 	return nil
